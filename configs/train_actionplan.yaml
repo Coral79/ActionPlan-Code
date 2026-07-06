@@ -1,0 +1,159 @@
+# @package _global_
+# Training config for the final ActionPlan model reported in the paper.
+#
+# Run: python train.py
+#
+# Data: HumanML3D-272 TAE motion latents (16-dim), merged with frame-level
+# text latents (16-dim, from BABEL via the CLIP autoencoder) where available.
+# Samples with frame-level text load 32-dim latents from
+# t2m_latent_frame_text_aligned; the rest load 16-dim latents from t2m_latents
+# (padded to 32) and the text loss is masked out (has_text_latent flag).
+#
+# The paper checkpoint was trained on 4 GPUs (DDP) with batch size 32 per GPU.
+
+run_dir: outputs/actionplan
+resume_dir: null
+ckpt: last
+
+seed: 1234
+logger_level: INFO
+device: cpu
+
+dataset: humanml3d_actionplan_merged
+motion_features: actionplan
+text_features: clip
+
+# Weights & Biases logging. Disabled by default; enable with:
+#   python train.py wandb_mode=online   (or offline)
+wandb_mode: disabled
+wandb_project: actionplan
+
+hydra:
+  run:
+    dir: ${run_dir}
+
+data:
+  _target_: src.data.text_motion_actionplan_merged.ActionPlanMergedDataset
+  name: ${dataset}
+
+  text_encoder:
+    _target_: src.data.text.TextEmbeddings
+    dataname: ${dataset}
+    modelname: ViT-B/32
+    device: cpu
+    preload: true
+    mean_pooling: false
+    disable: false
+    nfeats: 512
+    no_model: true  # embeddings are precomputed; do not load CLIP
+
+  motion_loader_t2m_latent_frame_text_aligned:
+    _target_: src.data.motion.AMASSMotionLoader
+    base_dir: datasets/motions/t2m_latent_frame_text_aligned
+    fps: 7.5
+    nfeats: 32
+    channel_first: true
+    disable: false
+
+  motion_loader_t2m_latents:
+    _target_: src.data.motion.AMASSMotionLoader
+    base_dir: datasets/motions/t2m_latents
+    fps: 7.5
+    nfeats: 16
+    disable: false
+
+  split: train
+  min_seconds: 1.0
+  max_seconds: 10.0
+  preload: true
+  tiny: false
+  drop_motion_perc: 0.15
+  drop_cond: 0.10
+  drop_trans: 0.5
+  val_same_as_train: true
+
+diffusion:
+  _target_: src.model.actionplan_rectified_flow.ActionPlanRectifiedFlow
+  diffusion_type: actionplan_rectified_flow
+
+  denoiser:
+    _target_: src.model.denoiser_actionplan.TransformerDenoiserActionPlanT
+    nfeats: 32  # 16 motion + 16 text latent dims
+    tx_dim: ${data.text_encoder.nfeats}
+    latent_dim: 1024
+    ff_size: 4096
+    num_layers: 16
+    num_heads: 16
+    dropout: 0.1
+    activation: gelu
+    nb_registers: 2
+    predict_sigma: ${..predict_sigma}
+
+  motion_normalizer:
+    _target_: src.normalizer.Normalizer
+    base_dir: datasets/stats/motion_stats_actionplan
+    eps: 1e-12
+
+  text_normalizer:
+    _target_: src.normalizer.Normalizer
+    base_dir: datasets/stats/text_stats_actionplan
+    eps: 1e-12
+
+  timesteps: 25  # inference denoising steps (rectified flow); training samples t continuously
+  prediction: v
+  t_zero_clean: true
+  shared_timestep_per_frame: false
+  inference_length: 78
+  use_ema: true
+  ema_decay: 0.9999
+  lr: 1e-4
+  predict_sigma: true
+  sigma_weight: 0.1
+  variance_mode: fixed_large
+  variance_alpha: 1.0
+  sampling_temperature: 1.0
+  stochastic_sampling: true
+
+dataloader:
+  _target_: torch.utils.data.DataLoader
+  batch_size: 32
+  pin_memory: true
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  max_epochs: 10000
+  max_steps: 1700000
+  log_every_n_steps: 1000
+  num_sanity_val_steps: 1
+  check_val_every_n_epoch: 500
+  accelerator: gpu
+  devices: 4
+  strategy: ddp
+
+  callbacks:
+    - _target_: pytorch_lightning.callbacks.ModelCheckpoint
+      filename: latest-{epoch}
+      every_n_epochs: 1000
+      save_top_k: -1
+      save_last: true
+    - _target_: src.callback.progress.ProgressLogger
+      precision: 3
+    - _target_: src.callback.tqdmbar.TQDMProgressBar
+    - _target_: src.callback.sample_logger_actionplan.SampleLoggerActionPlan
+      every_n_epochs: 1000
+      render_video: true
+      save_numpy: false
+      clip_mode: ae
+      autoencoder_path: models/clip_autoencoder/best.pt
+
+  logger:
+    - _target_: src.logger.csv.CSVLogger
+      save_dir: ${run_dir}
+      name: logs
+    - _target_: pytorch_lightning.loggers.WandbLogger
+      save_dir: ${run_dir}
+      project: ${wandb_project}
+      mode: ${wandb_mode}
+      log_model: false
+      # Optional overrides at the CLI, e.g.:
+      #   python train.py wandb_mode=online +trainer.logger.1.entity=my_team

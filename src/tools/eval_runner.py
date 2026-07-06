@@ -160,8 +160,8 @@ def run_validation_eval(trainer, pl_module, is_latent: bool) -> None:
             return
 
         sampler_config = {
-            "name": "actionplan_pyramid_random_s2",
-            "sampler_type": "actionplan_pyramid_random",
+            "name": "offline",
+            "mode": "actionplan",
             "steps_per_block": 2,
         }
 

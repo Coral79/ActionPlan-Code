@@ -10,6 +10,7 @@ This is the official repository for **ActionPlan**.
 ---
 
 ## 🚀 News
+- **[18/06/2026]** ActionPlan got accepted to ECCV 2026!
 
 - **[25/03/2026]** Inference code for the online demo released.
 
@@ -18,8 +19,8 @@ This is the official repository for **ActionPlan**.
 ## 📦 Release Plan
 - ✅ **Inference Code**: Run the real-time streaming demo yourself.
 - ✅ **Model Weights**: Pre-trained checkpoints for ActionPlan.
-- [ ] **Training Code**: Full training pipeline.
-- [ ] **Evaluation Code**: Evaluation pipeline.
+- ✅ **Training Code**: Full training pipeline.
+- ✅ **Evaluation Code**: Evaluation pipeline.
 
 ## 📄 Abstract
 We present **ActionPlan**, a unified motion diffusion framework that bridges real-time streaming with high-quality offline generation within a single model. The core idea is to introduce a *per-frame action plan*: the model predicts frame-level text latents that act as dense semantic anchors throughout denoising, and uses them to denoise the full motion sequence with combined semantic and motion cues.
@@ -146,7 +147,7 @@ Outputs go to `outputs/actionplan/generations/generate_streaming_latent/session_
 Publishes a **ZMQ protocol v3** “pose” stream intended for **[SONIC: Supersizing Motion Tracking for Natural Humanoid Whole-Body Control](https://nvlabs.github.io/GEAR-SONIC/)**  when you run their stack with a **ZMQ motion input** (e.g. reference tracking on a **Unitree G1**). 
 
 ```shell
-python generate.py --streaming --g1 --g1-host '*' --g1-port 5556 --g1-topic pose --g1-hz 30
+python generate.py --streaming --g1 --g1-host '*' --g1-port 5556 --g1-topic pose --g1-hz 50
 ```
 
 `/reset` clears streaming session state and G1 continuity; exiting the script stops the ZMQ publisher.
@@ -174,6 +175,98 @@ python render.py path/to/motion.npy --out_path output.mp4 --fps 30
 ```
 
 **Options:** `--out_path`, `--fps` (default: 30), `--ext` (default: mp4), `--tae_checkpoint`, `--device`, `--y_is_z_axis`
+
+---
+
+## Training
+
+Train the final ActionPlan model reported in the paper. Besides the standard dependencies (`prepare/download_dependencies.py`), training needs the 16-dim TAE latents of the HumanML3D-272 dataset:
+
+```bash
+# Download the 272-dim HumanML3D data and encode it to 16-dim TAE latents
+python prepare/download_streamer272_data.py
+```
+
+Then start training (config: `configs/train_actionplan.yaml`, defaults to 4 GPUs with DDP):
+
+```bash
+python train.py
+
+# Resume from the last checkpoint of an existing run
+python train.py resume_dir=outputs/actionplan
+
+# Override any config value from the command line, e.g. single GPU
+python train.py trainer.devices=1
+```
+
+Checkpoints and logs are written to `outputs/actionplan/` (the frozen config `config.json` there is what `generate.py` and `eval.py` read).
+
+### Logging with Weights & Biases
+
+Metrics are always written to a CSV logger under `outputs/actionplan/logs/`. W&B logging is set up but disabled by default; to enable it, log in once and pass `wandb_mode=online`:
+
+```bash
+wandb login          # once, or set WANDB_API_KEY
+python train.py wandb_mode=online wandb_project=actionplan
+
+# No internet on the training node? Log offline and sync later:
+python train.py wandb_mode=offline
+wandb sync outputs/actionplan/wandb/latest-run
+```
+
+Besides scalar metrics, the sample logger callback uploads rendered sample videos and generated-vs-ground-truth action plan text comparisons to W&B at every validation round (every 1000 epochs by default).
+
+---
+
+## Evaluation
+
+Reproduces the ActionPlan numbers of the paper (Tables 1 and 4) on the HumanML3D-272 test set, using MotionStreamer's protocol with their pretrained TMR-based evaluator (bundled in `models/Evaluator_272`). Metrics: FID, R-Precision (Top1/2/3), Matching Score, and Diversity.
+
+Requires the 272-dim test data:
+
+```bash
+python prepare/download_streamer272_data.py --skip_latents
+```
+
+Run the evaluation (paper settings: guidance 5.5, seed 123, ~20 replications):
+
+```bash
+# ActionPlan-Offline (Table 1)
+python eval.py --sampler offline --replication_times 20
+
+# ActionPlan-Streaming (Table 1)
+python eval.py --sampler streaming --replication_times 20
+
+# Sampling-strategy ablation (Table 4): parallel / offline_s5 / s10 / s15 / s25
+python eval.py --sampler parallel --replication_times 20
+
+# Everything in one go, generation parallelized over GPUs 1..3
+python eval.py --sampler all --replication_times 20 --num_gpus 4
+```
+
+All samplers share the same checkpoint; only the sampling schedule differs:
+
+| `--sampler` | Paper entry |
+| --- | --- |
+| `offline` | ActionPlan-Offline (random pyramid, K=2 overlap) |
+| `streaming` | ActionPlan-Streaming (text + first latent together, raster order) |
+| `parallel` | Fully overlap (Parallel): all latents denoised jointly |
+| `offline_s5/s10/s15` | K-step non-overlap rows |
+| `offline_s25` | Fully non-overlap (Random): one latent at a time |
+
+Results are printed as mean ± 95% CI and saved as JSON to `outputs/actionplan/eval_results/`.
+
+---
+
+## Latency Benchmark
+
+Measures the streaming latencies reported in the paper's runtime table (first-latent latency, per-latent latency, and Causal TAE decode time) on random test-set prompts:
+
+```bash
+python benchmark_latency.py --num_runs 20
+```
+
+Results are printed and saved to `outputs/actionplan/latency_results.json`.
 
 ---
 

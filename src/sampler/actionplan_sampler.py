@@ -53,11 +53,12 @@ class ActionPlanSampler:
 
     Modes:
       actionplan: phase1 (text only) + phase2 (random pyramid)
+      joint: phase1 (text only) + phase2 (all motion latents denoised in parallel)
       streaming: phase1 (text+first motion) + phase2 (frame-wise pyramid with on_frame_ready)
       streaming_block: phase1 (text+first block) + phase2 (block-wise pyramid with on_block_ready)
     """
 
-    MODES = ("actionplan", "streaming", "streaming_block")
+    MODES = ("actionplan", "joint", "streaming", "streaming_block")
 
     def __init__(
         self,
@@ -80,8 +81,8 @@ class ActionPlanSampler:
         if remaining_strategy is not None:
             if remaining_strategy == "pyramid_random":
                 mode = "actionplan"
-            elif remaining_strategy == "streaming_block":
-                mode = "streaming_block"
+            elif remaining_strategy in ("streaming_block", "joint"):
+                mode = remaining_strategy
             else:
                 mode = "streaming"
         self.mode = str(mode).lower()
@@ -1041,7 +1042,7 @@ class ActionPlanSampler:
 
         num_blocks_to_use = self.num_blocks if num_blocks is None else max(1, int(num_blocks))
 
-        if self.mode == "actionplan":
+        if self.mode in ("actionplan", "joint"):
             xt = self._phase1_denoise_text(xt, y, progress_bar=tqdm, use_ema=True)
         elif self.mode == "streaming_block":
             xt = self._phase1_denoise_text_and_first_block(
@@ -1073,6 +1074,14 @@ class ActionPlanSampler:
                 conditioning_frames=n_cond,
                 on_block_ready=on_block_ready,
                 progress_bar=tqdm, use_ema=True,
+            )
+        elif self.mode == "joint":
+            # All motion latents active from the start -> fully parallel denoising.
+            xt = self._phase2_pyramid(
+                xt, y, duration, effective_length, remaining_frames,
+                frame_order_batches=[list(remaining_frames)],
+                progress_bar=tqdm,
+                use_ema=True,
             )
         else:
             order = list(remaining_frames)
