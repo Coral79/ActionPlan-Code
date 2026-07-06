@@ -220,7 +220,7 @@ Besides scalar metrics, the sample logger callback uploads rendered sample video
 
 ## Evaluation
 
-Reproduces the ActionPlan numbers of the paper (Tables 1 and 4) on the HumanML3D-272 test set, using MotionStreamer's protocol with their pretrained TMR-based evaluator (bundled in `models/Evaluator_272`). Metrics: FID, R-Precision (Top1/2/3), Matching Score, and Diversity.
+Reproduces the ActionPlan numbers of the paper (Tables 1 and 4) on the HumanML3D-272 test set. Metrics: FID, R-Precision (Top1/2/3), Matching Score, and Diversity.
 
 Requires the 272-dim test data:
 
@@ -242,6 +242,9 @@ python eval.py --sampler parallel --replication_times 20
 
 # Everything in one go, generation parallelized over GPUs 1..3
 python eval.py --sampler all --replication_times 20 --num_gpus 4
+
+# Latency benchmark (Table 2)
+python benchmark_latency.py --num_runs 20
 ```
 
 All samplers share the same checkpoint; only the sampling schedule differs:
@@ -255,18 +258,6 @@ All samplers share the same checkpoint; only the sampling schedule differs:
 | `offline_s25` | Fully non-overlap (Random): one latent at a time |
 
 Results are printed as mean ± 95% CI and saved as JSON to `outputs/actionplan/eval_results/`.
-
----
-
-## Latency Benchmark
-
-Measures the streaming latencies reported in the paper's runtime table (first-latent latency, per-latent latency, and Causal TAE decode time) on random test-set prompts:
-
-```bash
-python benchmark_latency.py --num_runs 20
-```
-
-Results are printed and saved to `outputs/actionplan/latency_results.json`.
 
 ---
 
