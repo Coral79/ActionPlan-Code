@@ -1,28 +1,28 @@
 # ActionPlan: Future-Aware Streaming Motion Synthesis via Frame-Level Action Planning
 
-<p align="center">
-  <a href="https://coral79.github.io/ActionPlan/"><b>[🌐 Project Page]</b></a>
-  <a href="#"><b>[📄 arXiv]</b></a>
-</p>
+**[[🌐 Project Page][📄 arXiv]](https://coral79.github.io/ActionPlan/)**
 
 This is the official repository for **ActionPlan**.
 
 ---
 
 ## 🚀 News
+
 - **[18/06/2026]** ActionPlan got accepted to ECCV 2026!
-
 - **[25/03/2026]** Inference code for the online demo released.
-
 - **[March 2026]** Our paper has been submitted to arXiv!
 
 ## 📦 Release Plan
+
 - ✅ **Inference Code**: Run the real-time streaming demo yourself.
 - ✅ **Model Weights**: Pre-trained checkpoints for ActionPlan.
 - ✅ **Training Code**: Full training pipeline.
 - ✅ **Evaluation Code**: Evaluation pipeline.
 
+
+
 ## 📄 Abstract
+
 We present **ActionPlan**, a unified motion diffusion framework that bridges real-time streaming with high-quality offline generation within a single model. The core idea is to introduce a *per-frame action plan*: the model predicts frame-level text latents that act as dense semantic anchors throughout denoising, and uses them to denoise the full motion sequence with combined semantic and motion cues.
 
 To support this structured workflow, we design latent-specific diffusion steps, allowing each motion latent to be denoised independently and sampled in flexible orders at inference. As a result, ActionPlan can run in a history-conditioned, future-aware mode for real-time streaming, while also supporting high-quality offline generation.
@@ -30,6 +30,7 @@ To support this structured workflow, we design latent-specific diffusion steps, 
 The same mechanism further enables zero-shot motion editing and in-betweening without additional models. Experiments demonstrate that our real-time streaming is **5.25× faster** while achieving **18% motion quality improvement** over the best previous method in terms of FID.
 
 ---
+
 
 
 ## Install Environment
@@ -50,6 +51,8 @@ pip install -r requirements.txt
 
 ---
 
+
+
 ## Data Preparation
 
 Download and extract actionplan dependencies (annotations, embeddings, stats, etc.):
@@ -65,6 +68,7 @@ ActionPlan-Code/
 ├── generate.py       # Motion generation
 ├── render.py         # Render motion to video
 ├── requirements.txt  # Python dependencies
+├── assets/           # README media
 ├── demo/             # Interactive streaming demo (server, frontend, sampler)
 ├── deps/             # SMPL-H and joint assets (used by rendering / data prep)
 ├── outputs/          # Checkpoints and generation outputs
@@ -80,7 +84,10 @@ ActionPlan-Code/
 ---
 
 
+
 ## Interactive Demo Interface
+
+![ActionPlan interactive demo](assets/demo.png)
 
 ### Prerequisites
 
@@ -95,6 +102,8 @@ node -v
 npm -v
 ```
 
+
+
 ### Run the Demo
 
 To start the interactive demo interface, run:
@@ -104,6 +113,8 @@ bash demo/run.sh
 ```
 
 ---
+
+
 
 ## Offline Sampling
 
@@ -122,6 +133,8 @@ python generate.py -t "a person walks forward"
 ```
 
 ---
+
+
 
 ## Streaming Sampling
 
@@ -144,15 +157,43 @@ Outputs go to `outputs/actionplan/generations/generate_streaming_latent/session_
 
 ### SONIC + Unitree G1 (ZMQ pose stream)
 
-Publishes a **ZMQ protocol v3** “pose” stream intended for **[SONIC: Supersizing Motion Tracking for Natural Humanoid Whole-Body Control](https://nvlabs.github.io/GEAR-SONIC/)**  when you run their stack with a **ZMQ motion input** (e.g. reference tracking on a **Unitree G1**). 
+![SONIC G1 in MuJoCo with ActionPlan SMPL overlay](assets/streaming_session.gif)
+
+ActionPlan publishes **ZMQ protocol v3** (`topic=pose`, port `5556`) for **[SONIC](https://nvlabs.github.io/GEAR-SONIC/)** tracking on a **Unitree G1**. Install SONIC from **[GR00T-WholeBodyControl](https://github.com/NVlabs/GR00T-WholeBodyControl)** ([install](https://nvlabs.github.io/GR00T-WholeBodyControl/getting_started/installation_deploy.html), [ZMQ](https://nvlabs.github.io/GR00T-WholeBodyControl/tutorials/zmq.html)).
+
+Start **ActionPlan first**, then MuJoCo, then the controller. 
 
 ```shell
+# Three terminals: A (ActionPlan) → B (MuJoCo) → C (SONIC deploy)
+
+# Terminal A — ActionPlan (this repo)
 python generate.py --streaming --g1 --g1-host '*' --g1-port 5556 --g1-topic pose --g1-hz 50
+
+# Terminal B — MuJoCo (GR00T-WholeBodyControl/)
+source .venv_sim/bin/activate
+python gear_sonic/scripts/run_sim_loop.py
+
+# Terminal C — controller (GR00T-WholeBodyControl/gear_sonic_deploy/)
+source scripts/setup_env.sh
+bash deploy.sh --input-type zmq --zmq-host localhost --zmq-port 5556 --zmq-topic pose sim
+#   type Y when prompted and wait until it says `Init Done`
+
+# --zmq-host = machine running ActionPlan (A), not the robot
+#   localhost     if A and C are on the same computer
+#   192.168.1.20  if ActionPlan is on another machine
+#   last arg: sim = MuJoCo, real = physical G1 (skip terminal B if using real)
 ```
 
-`/reset` clears streaming session state and G1 continuity; exiting the script stops the ZMQ publisher.
+To stream an ActionPlan motion:
+
+1. **MuJoCo Simulator** — click the 3D view, press `9` to toggle the elastic band that holds the robot up.
+2. **Terminal C (controller)** — type `]`. You should see `transitioning to CONTROL state`.
+3. **Terminal C (controller)** — press **Enter** once.
+4. **Terminal A (ActionPlan)** — type a text prompt.
 
 ---
+
+
 
 ## Rendering
 
@@ -177,6 +218,8 @@ python render.py path/to/motion.npy --out_path output.mp4 --fps 30
 **Options:** `--out_path`, `--fps` (default: 30), `--ext` (default: mp4), `--tae_checkpoint`, `--device`, `--y_is_z_axis`
 
 ---
+
+
 
 ## Training
 
@@ -218,6 +261,8 @@ Besides scalar metrics, the sample logger callback uploads rendered sample video
 
 ---
 
+
+
 ## Evaluation
 
 Reproduces the ActionPlan numbers of the paper (Tables 1 and 4) on the HumanML3D-272 test set. Metrics: FID, R-Precision (Top1/2/3), Matching Score, and Diversity.
@@ -249,19 +294,24 @@ python benchmark_latency.py --num_runs 20
 
 All samplers share the same checkpoint; only the sampling schedule differs:
 
-| `--sampler` | Paper entry |
-| --- | --- |
-| `offline` | ActionPlan-Offline (random pyramid, K=2 overlap) |
-| `streaming` | ActionPlan-Streaming (text + first latent together, raster order) |
-| `parallel` | Fully overlap (Parallel): all latents denoised jointly |
-| `offline_s5/s10/s15` | K-step non-overlap rows |
-| `offline_s25` | Fully non-overlap (Random): one latent at a time |
+
+| `--sampler`          | Paper entry                                                       |
+| -------------------- | ----------------------------------------------------------------- |
+| `offline`            | ActionPlan-Offline (random pyramid, K=2 overlap)                  |
+| `streaming`          | ActionPlan-Streaming (text + first latent together, raster order) |
+| `parallel`           | Fully overlap (Parallel): all latents denoised jointly            |
+| `offline_s5/s10/s15` | K-step non-overlap rows                                           |
+| `offline_s25`        | Fully non-overlap (Random): one latent at a time                  |
+
 
 Results are printed as mean ± 95% CI and saved as JSON to `outputs/actionplan/eval_results/`.
 
 ---
 
+
+
 ## ✍️ Citation
+
 If you find our work or code useful for your research, please consider citing:
 
 ```bibtex
@@ -273,12 +323,16 @@ If you find our work or code useful for your research, please consider citing:
 }
 ```
 
+
+
 ## 👀 You Might Also Like
 
 Also check out our CVPR 2026 paper 🧟 **[FrankenMotion](https://coral79.github.io/frankenmotion/)** — part-level human motion generation and composition with fine-grained spatial and temporal control.
 
 ---
 
+
+
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=Coral79/ActionPlan-Code&type=Date)](https://star-history.com/#Coral79/ActionPlan-Code&Date)
+![Star History Chart](https://api.star-history.com/svg?repos=Coral79/ActionPlan-Code&type=Date)

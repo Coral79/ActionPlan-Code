@@ -13,3 +13,4 @@ datasets/
 outputs/
 deps/
 models/
+*.mp4
