@@ -20,8 +20,8 @@ class Normalizer(nn.Module):
             self.load()
 
     def load(self):
-        mean = torch.load(self.mean_path)
-        std = torch.load(self.std_path)
+        mean = torch.load(self.mean_path, weights_only=True)
+        std = torch.load(self.std_path, weights_only=True)
         self.register_buffer("mean", mean)
         self.register_buffer("std", std)
 
